@@ -1,0 +1,685 @@
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/twitter-bootstrap/2.3.2/css/bootstrap.css">
+<style>
+    .cell {
+        display     : inline-block;
+        width       : 100px;
+        height      : 100px;
+        padding     : 2px;
+        margin      : 2px;
+        border      : 1px solid #bbb;
+        font-size   : 50px;
+        line-height : 1;
+        overflow    : hidden;
+    }
+
+    .player-icon {
+        width             : 20px;
+        height            : 20px;
+        background-size   : cover;
+        background-repeat : no-repeat;
+    }
+
+    .msg {
+        position   : absolute;
+        top        : 200px;
+        right      : 10px;
+        display    : none;
+        border     : solid 1px lightgray;
+        padding    : 10px;
+        text-align : center;
+        background : white;
+        min-width  : 200px;
+    }
+
+    .msg img {
+        height : 100px;
+    }
+</style>
+
+<div ng-app="ticTacToeApp" class="main">
+
+    <div ng-controller="TicTacToeCtrl">
+
+        <hr/>
+        <div ng-show="game && !tournament.winners.length">
+
+
+            <h1 style="text-align: center">
+
+
+                <img class="img-circle" src="{{game.players[0].imageUrl }}" style="width: 50px"> {{ game.players[0].name }} VS
+                <img class="img-circle" src="{{game.players[1].imageUrl }}" style="width: 50px"> {{ game.players[1].name }}
+            </h1>
+
+
+            <table>
+                <tr ng-repeat="row in game.board">
+                    <td ng-repeat="cell in row" class="cell" id="{{ cell.id }}">
+                        <img ng-src="{{renderCell(cell)}}">
+                    </td>
+                </tr>
+            </table>
+
+
+        </div>
+
+
+        <div ng-show="tournament.winners.length">
+            <h1>Winners</h1>
+
+            <div ng-repeat="player in tournament.winners">
+                <img src="{{ player.imageUrl }}" style="height: 100px; border: solid 1px lightgray">
+                {{ player.name }}
+            </div>
+        </div>
+
+        <button ng-click="startTournament()">Start tournament</button>
+
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-2.1.4.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.3.14/angular.js"></script>
+<script src="https://cdn.firebase.com/js/client/2.2.4/firebase.js"></script>
+<script src="https://cdn.firebase.com/libs/angularfire/1.1.2/angularfire.min.js"></script>
+<script>
+
+    (function() {
+        var prompt_name_player = prompt("Enter your name");
+        if(prompt_name_player == undefined){
+            prompt_name_player = "Player";
+        }else if(prompt_name_player == ""){
+            prompt_name_player = "Player";
+        }
+
+        var BOARD_SIZE = 3,
+            MOVES_TO_WIN = 3,
+            MOVE_DELAY = 200,
+            GAME_DELAY = 1000;
+
+        var WON = 1,
+            DRAW = 2,
+            INVALID = 3;
+
+        var moveCount = 0;
+
+        var MODE = 'local'; // local || server
+
+
+        var move = function(board, x, y, s, player) {
+            // modified from: http://stackoverflow.com/questions/1056316/algorithm-for-determining-tic-tac-toe-game-over
+
+            try {
+                var i,
+                    winningMoves;
+
+                if(board[x][y].val !== undefined)
+                    return {type : INVALID};
+
+                board[x][y].val = s;
+                board[x][y].player = player;
+                moveCount++;
+
+                //check col
+                winningMoves = [];
+                for(i = y; i >= 0; i--) {
+                    if(!board[x][i] || board[x][i].val != s)
+                        break;
+                    winningMoves.unshift([x, i]);
+                }
+                for(i = y + 1; i < BOARD_SIZE; i++) {
+                    if(!board[x][i] || board[x][i].val != s)
+                        break;
+                    winningMoves.push([x, i]);
+                }
+                if(winningMoves.length >= MOVES_TO_WIN) {
+                    return {
+                        type         : WON,
+                        winningMoves : winningMoves
+                    };
+                }
+
+                //check row (loop side to side relative to the given 'y')
+                winningMoves = [];
+                for(i = x; i >= 0; i--) {
+                    if(!board[i][y] || board[i][y].val != s)
+                        break;
+                    winningMoves.unshift([i, y]);
+                }
+                for(i = x + 1; i < BOARD_SIZE; i++) {
+                    if(!board[i][y] || board[i][y].val != s)
+                        break;
+                    winningMoves.push([i, y]);
+                }
+                if(winningMoves.length >= MOVES_TO_WIN) {
+                    return {
+                        type         : WON,
+                        winningMoves : winningMoves
+                    };
+                }
+
+                //check diag (go in both directions relative to the given coordinates)
+                winningMoves = [];
+                for(var xi = x, yi = y; xi >= 0 && yi >= 0; xi--, yi--) {
+                    if(!board[xi][yi] || board[xi][yi].val != s)
+                        break;
+                    winningMoves.unshift([xi, yi]);
+                }
+                for(xi = x + 1, yi = y + 1; xi < BOARD_SIZE && yi < BOARD_SIZE; xi++, yi++) {
+                    if(!board[xi][yi] || board[xi][yi].val != s)
+                        break;
+                    winningMoves.push([xi, yi]);
+                }
+                if(winningMoves.length >= MOVES_TO_WIN) {
+                    return {
+                        type         : WON,
+                        winningMoves : winningMoves
+                    };
+                }
+
+                //check anti diag (go in both directions relative to teh given coordinates)
+                winningMoves = [];
+                for(var xi = x, yi = y; xi < BOARD_SIZE && yi >= 0; xi++, yi--) {
+                    if(!board[xi][yi] || board[xi][yi].val != s)
+                        break;
+                    winningMoves.unshift([xi, yi]);
+                }
+                for(var xi = x-1, yi = y+1; yi < BOARD_SIZE && xi >= 0; xi--, yi++) {
+                    if(!board[xi][yi] || board[xi][yi].val != s)
+                        break;
+                    winningMoves.push([xi, yi]);
+                }
+                if(winningMoves.length >= MOVES_TO_WIN) {
+                    return {
+                        type         : WON,
+                        winningMoves : winningMoves
+                    };
+                }
+
+
+
+                //check draw
+                if(moveCount >= (Math.pow(BOARD_SIZE, 2))) {
+                    return {
+                        type : DRAW
+                    };
+                }
+
+            } catch(e) {
+                console.log('Error: ' + e);
+
+            }
+        };
+
+
+        var app = angular.module("ticTacToeApp", ["firebase"]);
+        app.controller("TicTacToeCtrl", ["$scope", "$firebaseArray",
+            function($scope, $firebaseArray) {
+
+                $scope.safeApply = function(fn) {
+                    var phase = this.$root.$$phase;
+                    if(phase == '$apply' || phase == '$digest') {
+                        if(fn && (typeof(fn) === 'function')) {
+                            fn();
+                        }
+                    } else {
+                        this.$apply(fn);
+                    }
+                };
+
+                // ============================
+                // LOCAL DATA
+
+                if(MODE === 'local') {
+                    $scope.players = [
+                        {
+                            name     : 'Tigran',
+                            imageUrl : 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Smiley.svg/2000px-Smiley.svg.png',
+                            code     : function(board, isX) {
+
+                                // START ========================================
+                                // Please replace the code below with yours :-)
+
+
+                               //  human (for debugging):
+                               // var x = prompt('x:');
+                               // var y = prompt('y');
+                               // return [+x, +y];
+                               
+                                
+                                
+
+                               
+                                
+                                var isEmpty = function(board) {
+                                    for(var x = 0; x < BOARD_SIZE; x++) {
+                                        var row = board[x];
+                                        for(var y = 0; y < BOARD_SIZE; y++) {
+                                            var cell = row[y];
+                                            if(cell !== undefined)
+                                                return false;
+                                        }
+                                    }
+
+                                    return true;
+                                };
+
+                                var getWinningMove = function(kar) {
+                                    
+
+                                    if(board[0][0]===kar && board[0][1]===kar && board[0][2]===undefined){
+                                        return[0,2];
+                                    }
+                                    if(board[0][1]===kar && board[0][2]===kar && board[0][0]===undefined){
+                                        return[0,0];
+                                    }
+                                    if(board[0][2]===kar && board[0][0]===kar && board[0][1]===undefined){
+                                        return[0,1];
+                                    }
+
+
+                                    if(board[1][0]===kar && board[1][1]===kar && board[1][2]===undefined){
+                                        return[1,2];
+                                    }
+                                    if(board[1][1]===kar && board[1][2]===kar && board[1][0]===undefined){
+                                        return[1,0];
+                                    }
+                                    if(board[1][2]===kar && board[1][0]===kar && board[1][1]===undefined){
+                                        return[1,1];
+                                    }
+                                    
+
+
+                                    if(board[2][0]===kar && board[2][1]===kar && board[2][2]===undefined){
+                                        return[2,2];
+                                    }
+                                    if(board[2][1]===kar && board[2][2]===kar && board[2][0]===undefined){
+                                        return[2,0];
+                                    }
+                                    if(board[2][2]===kar && board[2][0]===kar && board[2][1]===undefined){
+                                        return[2,1];
+                                    }
+                                    
+
+
+                                    if(board[0][0]===kar && board[1][0]===kar && board[2][0]===undefined){
+                                        return[2,0];
+                                    }
+                                    if(board[1][0]===kar && board[2][0]===kar && board[0][0]===undefined){
+                                        return[0,0];
+                                    }
+                                    if(board[0][0]===kar && board[2][0]===kar && board[1][0]===undefined){
+                                        return[1,0];
+                                    }
+                                    
+
+                                    if(board[0][1]===kar && board[1][1]===kar && board[2][1]===undefined){
+                                        return[2,1];
+                                    }
+                                    if(board[1][1]===kar && board[2][1]===kar && board[0][1]===undefined){
+                                        return[0,1];
+                                    }
+                                    if(board[2][1]===kar && board[0][1]===kar && board[1][1]===undefined){
+                                        return[1,1];
+                                    }
+
+
+                                    if(board[0][2]===kar && board[1][2]===kar && board[2][2]===undefined){
+                                        return[2,2];
+                                    }
+                                    if(board[0][2]===kar && board[2][2]===kar && board[1][2]===undefined){
+                                        return[1,2];
+                                    }
+                                    if(board[1][2]===kar && board[2][2]===kar && board[0][2]===undefined){
+                                        return[0,2];
+                                    }
+
+
+                                    if(board[0][0]===kar && board[1][1]===kar && board[2][2]===undefined){
+                                        return[2,2];
+                                    }
+                                    if(board[0][0]===kar && board[2][2]===kar && board[1][1]===undefined){
+                                        return[1,1];
+                                    }
+                                    if(board[2][2]===kar && board[1][1]===kar && board[0][0]===undefined){
+                                        return[0,0];
+                                    }
+
+
+                                    if(board[0][2]===kar && board[1][1]===kar && board[2][0]===undefined){
+                                        return[2,0];
+                                    }
+                                    if(board[2][0]===kar && board[1][1]===kar && board[0][2]===undefined){
+                                        return[0,2];
+                                    }
+                                    if(board[2][0]===kar && board[0][2]===kar && board[1][1]===undefined){
+                                        return[1,1];
+                                    }
+
+ 
+                                };
+                                
+
+                                var kar;
+                                var hKar;
+                                if(isX === true) {
+                                    kar = 1;
+                                    hKar = 0;
+                                }
+                                else {
+                                    kar = 0;
+                                    hKar = 1;
+                                }
+                                    
+                                var wMove = getWinningMove(kar);
+                                if(wMove !== undefined) {
+                                    return wMove;
+                                }
+
+                                var hWMove = getWinningMove(hKar);
+                                if(hWMove !== undefined) {
+                                    return hWMove;
+                                }
+
+                                
+
+                            
+                                var empty = isEmpty(board);
+                                
+                                if(empty) {
+                                   return[0,0];
+                                } else {
+                                    if(board[0][0]===undefined){
+                                        return[0,0];
+                                    }
+                                    if(board[2][2]===undefined){
+                                        return[2,2];
+                                    }
+                                    if(board[0][2]===undefined){
+                                        return[0,2];
+                                    }
+                                    if(board[2][0]===undefined){
+                                        return[2,0];
+                                    }
+                                    if(board[0][2]===undefined){
+                                        return[0,2];
+                                    }
+                                }
+
+
+
+
+                                for(var x = 0; x < BOARD_SIZE; x++) {
+                                    var row = board[x];
+                                    for(var y = 0; y < BOARD_SIZE; y++) {
+                                        var cell = row[y];
+                                        if(cell === undefined)
+                                            return [x, y];
+                                    }
+                                }
+
+
+
+                                    
+                                
+
+                            }
+                        },
+                        {
+                            name     : prompt_name_player,
+                            imageUrl : 'https://encrypted-tbn3.gstatic.com/images?q=tbn:ANd9GcR_xZ6BY6uFEx-bbLKQlG1hX14OYL9EcWU1Oh5mnMr-8LnVgVePxQ',
+                            code     : function(board, isX) {
+
+                                // START ========================================
+                                // Please replace the code below with yours :-)
+
+                                var x = prompt('x:');
+                                var y = prompt('y:');
+                                return [+x, +y];
+
+                                // END =========================================
+
+                            }
+                        }
+                        
+                    ];
+                }
+
+                // ============================
+                // REMOTE DATA
+
+                if(MODE === 'server') {
+
+                    var playersRef = new Firebase('https://torid-inferno-7130.firebaseio.com/players2').limitToLast(40);
+                    $scope.players = $firebaseArray(playersRef);
+
+                    var tournamentsRef = new Firebase('https://torid-inferno-7130.firebaseio.com/tournaments').limit(10);
+                    $scope.tournaments = $firebaseArray(tournamentsRef);
+
+                    $scope.tournaments.$loaded().then(function() {
+
+                    });
+
+                    $scope.players.$loaded().then(function() {
+
+                    });
+                }
+                // ===============================
+
+
+                $scope.startTournament = function() {
+                    if(!$scope.tournaments)
+                        $scope.tournaments = [];
+
+                    var tournament = {
+                        start   : new Date().toISOString(),
+                        players : $scope.players
+                    };
+
+                    $scope.tournament = tournament;
+
+                    if($scope.tournaments.$add)
+                        $scope.tournaments.$add(tournament);
+                    else
+                        $scope.tournaments.push(tournament);
+
+
+                    var endTournament = function() {
+                        tournament.end = new Date().toISOString();
+                        $scope.safeApply();
+                    };
+
+                    $scope.round = 1;
+
+                    function showMsg(msg, cb) {
+                        var $msg = $('<div class="msg">' + msg + '</div>');
+
+                        $msg.appendTo('body').slideDown(300, function() {
+                            window.setTimeout(function() {
+                                $msg.remove();
+                                cb();
+                            }, GAME_DELAY);
+                        });
+                    }
+
+                    function runGames(players) {
+                        console.log('Round: ' + $scope.round);
+
+                        players = shuffle(players);
+
+                        var nextRoundPlayers = [];
+
+                        var end = function() {
+                            console.log('next round: ' + nextRoundPlayers.map(function(obj) {
+                                return obj.name;
+                            }));
+                            if(nextRoundPlayers.length > 1 && $scope.round < $scope.players.length) {
+                                $scope.round++;
+                                runGames(nextRoundPlayers);
+                            } else {
+                                tournament.winners = nextRoundPlayers;
+                                endTournament();
+                            }
+                        };
+
+                        var next = function(index) {
+                            var player1 = players[index];
+                            var player2 = players[index + 1];
+
+                            if(player1 && player2) {
+                                var game = {
+                                    id      : 1,
+                                    board   : [],
+                                    players : [player1, player2]
+                                };
+
+                                $scope.game = game;
+                                $scope.safeApply();
+
+
+                                playGame(game.board, player1, player2, {xFirst : true}, function(result) {
+                                    if(result.type === INVALID) {
+                                        console.log(result.player.name + ' has made an invalid move :(');
+                                        var winningPlayer = result.player === player1 ? player2 : player1;
+                                        var losingPlayer = result.player;
+
+                                        nextRoundPlayers.push(winningPlayer);
+
+                                        showMsg('<h1>' + losingPlayer.name + ' made in invalid move - disqualified</h1>', function() {
+                                            next(index + 2);
+                                        });
+                                    } else if(result.type === WON) {
+                                        console.log(result.player.name + ' has won!');
+                                        var winningPlayer = result.player;
+                                        nextRoundPlayers.push(winningPlayer);
+                                        //alert(result.winningMoves);
+                                        for(var i = 0, len = result.winningMoves.length; i < len; i++) {
+                                            var winningMove = result.winningMoves[i];
+                                            $('#' + winningMove.join('_')).css('border', 'solid 5px red');
+                                        }
+
+                                        showMsg('<img src="' + winningPlayer.imageUrl + '" class="img-circle"> <h1>' + winningPlayer.name + ' wins</h1>', function() {
+                                            next(index + 2);
+                                        });
+
+                                    } else if(result.type === DRAW) {
+                                        console.log('Draw!');
+                                        nextRoundPlayers.push(player1, player2);
+
+                                        showMsg('<h1>Draw</h1>', function() {
+                                            next(index + 2);
+                                        });
+
+                                    }
+                                });
+                            } else {
+                                player1 && nextRoundPlayers.push(player1);
+                                player2 && nextRoundPlayers.push(player2);
+                                end();
+                            }
+                        };
+                        next(0);
+                    }
+
+                    function playGame(board, player1, player2, options, cb) {
+
+                        moveCount = 0;
+
+                        console.log(player1.name + ' vs ' + player2.name);
+
+                        for(var x = 0; x < BOARD_SIZE; x++) {
+                            board[x] = [];
+                            for(var y = 0; y < BOARD_SIZE; y++) {
+                                board[x][y] = {id : x + '_' + y};
+                            }
+                        }
+
+                        var player1Func = typeof(player1.code) === 'function' ? player1.code : new Function(['board', 'isX', 'BOARD_SIZE', 'MOVES_TO_WIN'], player1.code);
+                        var player2Func = typeof(player2.code) === 'function' ? player2.code : new Function(['board', 'isX', 'BOARD_SIZE', 'MOVES_TO_WIN'], player2.code);
+
+
+                        var isX = options.xFirst;
+                        var nextMove = function() {
+
+                            var basicBoard = board.map(function(arr) {
+                                return arr.map(function(obj) {
+                                    return obj.val;
+                                });
+                            });
+                            var player = isX ? player1 : player2; // player1 is assumed to be X
+                            var playerMethod = isX ? player1Func : player2Func;
+
+                            try {
+                                var coords = playerMethod(basicBoard, isX, BOARD_SIZE, MOVES_TO_WIN);
+                            } catch(e) {
+                                console.log('Error: ' + e);
+                                result = {
+                                    type   : INVALID,
+                                    player : player
+                                };
+                                return cb(result, board);
+                            }
+
+                            if(coords) {
+                                // make the next move
+                                var result = move(board, coords[0], coords[1], isX ? 1 : 0, player);
+
+                                $scope.safeApply(); // tell angular
+
+                                if(result) {
+                                    result.player = player;
+                                    return cb(result, board);
+                                }
+                            } else {
+                                result = {
+                                    type   : INVALID,
+                                    player : player
+                                };
+                                return cb(result, board);
+                            }
+
+                            isX = !isX;
+                            window.setTimeout(nextMove, MOVE_DELAY);
+                        };
+                        nextMove();
+
+                        $scope.safeApply();
+                    }
+
+                    runGames($scope.players.slice(0));
+
+
+                    function shuffle(array) {
+                        var currentIndex = array.length, temporaryValue, randomIndex;
+
+                        // While there remain elements to shuffle...
+                        while(0 !== currentIndex) {
+
+                            // Pick a remaining element...
+                            randomIndex = Math.floor(Math.random() * currentIndex);
+                            currentIndex -= 1;
+
+                            // And swap it with the current element.
+                            temporaryValue = array[currentIndex];
+                            array[currentIndex] = array[randomIndex];
+                            array[randomIndex] = temporaryValue;
+                        }
+
+                        return array;
+                    }
+                };
+
+
+                $scope.renderCell = function(cell) {
+                    if(!cell.player)
+                        return '';
+
+                    return cell.player.imageUrl;
+                };
+            }
+        ]);
+
+    })();
+
+</script>
+                
